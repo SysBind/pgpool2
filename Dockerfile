@@ -3,8 +3,6 @@ FROM postgres:11-alpine
 MAINTAINER Asaf Ohayon <asaf@sysbind.co.il>
 
 
-COPY . /usr/src/pgpool-II
-
 RUN set -ex \
 	\
     && apk add --no-cache --virtual .build-deps \
@@ -14,10 +12,11 @@ RUN set -ex \
        make
 
 
+COPY . /usr/src/pgpool-II
+
 RUN set -ex \
     \
     && cd /usr/src/pgpool-II \
-    && patch -p1 < dockerfiles/fix_compile_alpine38.patch \
     && ./configure \
     && make clean \
     && make \
@@ -26,6 +25,8 @@ RUN set -ex \
     && rm -rf /usr/src/pgpool-II
 
 RUN mkdir -p /var/run/pgpool && chown -R postgres:postgres /var/run/pgpool && chmod 2777 /var/run/pgpool
+
+COPY dockerfiles/docker-entrypoint.sh /usr/local/bin/
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 
