@@ -23,7 +23,6 @@ RUN set -ex \
     && make \
     && make install \
     && apk del .build-deps \
-    && rm /*.patch \
     && rm -rf /usr/src/pgpool-II
 
 RUN mkdir -p /var/run/pgpool && chown -R postgres:postgres /var/run/pgpool && chmod 2777 /var/run/pgpool
