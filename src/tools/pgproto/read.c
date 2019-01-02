@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <sys/select.h>
 #include <arpa/inet.h>
 #include "pgproto/fe_memutils.h"
 #include <libpq-fe.h>
