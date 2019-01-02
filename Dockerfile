@@ -22,7 +22,7 @@ RUN set -ex \
     && make clean \
     && make \
     && make install \
-    && apk del .fetch-deps .build-deps \
+    && apk del .build-deps \
     && rm /*.patch \
     && rm -rf /usr/src/pgpool-II
 
