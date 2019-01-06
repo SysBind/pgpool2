@@ -61,6 +61,7 @@
 #include "auth/md5.h"
 #include "auth/pool_hba.h"
 #include "utils/pool_stream.h"
+#include "utils/ping.h"
 
 char		remote_ps_data[NI_MAXHOST]; /* used for set_ps_display */
 static POOL_CONNECTION_POOL_SLOT * slot;
@@ -115,6 +116,7 @@ do_health_check_child(int *node_id)
 
 	ereport(DEBUG1,
 			(errmsg("I am health check process pid:%d DB node id:%d", getpid(), *node_id)));
+	ereport(DEBUG1, (errmsg("health_check(m): my_backend_status[%d]: %p", *node_id,  my_backend_status[*node_id])));
 
 	/* Identify myself via ps */
 	init_ps_display("", "", "", "");
@@ -161,6 +163,7 @@ do_health_check_child(int *node_id)
 
 	for (;;)
 	{
+		ereport(DEBUG1, (errmsg("health_check(o): my_backend_status[%d]: %p", *node_id,  my_backend_status[*node_id])));
 		MemoryContextSwitchTo(HealthCheckMemoryContext);
 		MemoryContextResetAndDeleteChildren(HealthCheckMemoryContext);
 
@@ -170,7 +173,6 @@ do_health_check_child(int *node_id)
 		{
 			sleep(30);
 		}
-
 		/*
 		 * If health checking is enabled and the node is not in down status,
 		 * do health check.
@@ -178,7 +180,7 @@ do_health_check_child(int *node_id)
 		else if (pool_config->health_check_params[*node_id].health_check_period > 0)
 		{
 			bool		result;
-
+			ereport(DEBUG1, (errmsg("health_check(a): my_backend_status[%d]: %p", *node_id,  my_backend_status[*node_id])));
 			result = establish_persistent_connection(*node_id);
 
 #ifdef HEALTHCHECK_DEBUG
@@ -203,6 +205,26 @@ do_health_check_child(int *node_id)
 					/* trigger failover */
 					partial = health_check_timer_expired ? false : true;
 					degenerate_backend_set(node_id, 1, partial ? REQ_DETAIL_SWITCHOVER : 0);
+				}
+			}
+			else if ( slot == NULL ) // probe for host and attempt auto-recovery
+			{
+				BackendInfo *bkinfo;
+
+				bkinfo = pool_get_node_info(*node_id);
+				// refresh backend status
+				(*my_backend_status[*node_id]) = bkinfo->backend_status;
+				ereport(DEBUG1,
+					(errmsg("node %d, probing if backend is back: %s",
+						*node_id, bkinfo->backend_hostname)));
+				bool backend_pong = ping(bkinfo->backend_hostname);
+
+				if (backend_pong) {
+					ereport(LOG,
+						(errmsg("failed node %d is back: %s, starting recovery in 30 seconds",
+							*node_id, bkinfo->backend_hostname)));
+					sleep(30);
+					start_recovery(*node_id);
 				}
 			}
 
