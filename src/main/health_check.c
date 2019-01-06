@@ -116,7 +116,6 @@ do_health_check_child(int *node_id)
 
 	ereport(DEBUG1,
 			(errmsg("I am health check process pid:%d DB node id:%d", getpid(), *node_id)));
-	ereport(DEBUG1, (errmsg("health_check(m): my_backend_status[%d]: %p", *node_id,  my_backend_status[*node_id])));
 
 	/* Identify myself via ps */
 	init_ps_display("", "", "", "");
@@ -163,7 +162,6 @@ do_health_check_child(int *node_id)
 
 	for (;;)
 	{
-		ereport(DEBUG1, (errmsg("health_check(o): my_backend_status[%d]: %p", *node_id,  my_backend_status[*node_id])));
 		MemoryContextSwitchTo(HealthCheckMemoryContext);
 		MemoryContextResetAndDeleteChildren(HealthCheckMemoryContext);
 
@@ -180,7 +178,7 @@ do_health_check_child(int *node_id)
 		else if (pool_config->health_check_params[*node_id].health_check_period > 0)
 		{
 			bool		result;
-			ereport(DEBUG1, (errmsg("health_check(a): my_backend_status[%d]: %p", *node_id,  my_backend_status[*node_id])));
+
 			result = establish_persistent_connection(*node_id);
 
 #ifdef HEALTHCHECK_DEBUG

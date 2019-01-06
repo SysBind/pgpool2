@@ -306,7 +306,7 @@ function set_postgresql_conf
 		    echo "max_replication_slots = $num_slots" >> $PGCONF
 		fi
 	elif [ $MODE = 'r' -o $MODE = 'l' -o $MODE = 'y' ];then
-		echo "wal_level = archive" >> $PGCONF
+		echo "wal_level = replica" >> $PGCONF
 		echo "archive_mode = on" >> $PGCONF
 		echo "archive_command = 'cp %p $BASEDIR/archivedir/%f </dev/null'" >> $PGCONF
 		if [ $MODE = 'l' ];then
@@ -324,6 +324,7 @@ function set_postgresql_conf
     fi
 
     echo "host      all   all       0/0    trust" >> $PGHBACONF
+	echo "host      all   all       ::1/128    trust" >> $PGHBACONF
 
     if [ $PGVERSION -gt 9 ];
     then
@@ -393,7 +394,7 @@ fi
 cat >> $1/$SCRIPT <<'EOF'
 if [ $pg_rewind_failed = "true" ];then
 
-$psql -p $PORT -c "SELECT pg_start_backup('Streaming Replication', true)" postgres
+$psql -h 127.0.0.1 -p $PORT -c "SELECT pg_start_backup('Streaming Replication', true)" postgres
 
 echo "source: $master_db_cluster dest: $DEST_CLUSTER" >> $log
 
@@ -419,7 +420,7 @@ fi
 cat >> $1/$SCRIPT <<'EOF'
 cat > $DEST_CLUSTER/recovery.conf <<REOF
 standby_mode          = 'on'
-primary_conninfo      = 'port=$PORT user=$PGSUPERUSER'
+primary_conninfo      = 'host=127.0.0.1 port=$PORT user=$PGSUPERUSER'
 recovery_target_timeline='latest'
 EOF
 
@@ -437,7 +438,7 @@ fi
 
 cat >> $1/$SCRIPT <<'EOF'
 if [ $pg_rewind_failed = "true" ];then
-$psql -p $PORT -c "SELECT pg_stop_backup()" postgres
+$psql -h 127.0.0.1 -p $PORT -c "SELECT pg_stop_backup()" postgres
 fi
 
 if [ $pg_rewind_failed = "false" ];then
@@ -647,7 +648,7 @@ function wait_for_pgpool_startup {
 
 	while [ $timeout -gt  0 ]
 	do
-		$PSQL -p $PGPOOL_PORT -c "show pool_nodes" postgres >/dev/null 2>&1
+		$PSQL -h 127.0.0.1 -p $PGPOOL_PORT -c "show pool_nodes" postgres >/dev/null 2>&1
 		if [ $? = 0 ];then
 #		        echo "pgpool-II comes up after `expr 20 - $timeout` seconds"
 			break;
@@ -666,7 +667,7 @@ function wait_for_pgpool_reload {
 
 	while [ $timeout -gt  0 ]
 	do
-		N=`$PSQL -p $PGPOOL_PORT -c "show pool_status" test | grep backend_data | wc -l`
+		N=`$PSQL -h 127.0.0.1 -p $PGPOOL_PORT -c "show pool_status" test | grep backend_data | wc -l`
 		if [ $N = $num_node ];then
 			break;
 		fi
@@ -880,7 +881,7 @@ echo "pid_file_name = '$BASEDIR/run/pgpool.pid'" >> $CONF
 test ! -d log && mkdir log
 echo "logdir = '$BASEDIR/log'" >> $CONF
 
-if [ "$PGPOOLDEBUG" = "true" ];then    
+if [ "$PGPOOLDEBUG" = "true" ];then	
     echo '$PGPOOL_INSTALL_DIR/bin/pgpool -d -D -n -f $dir/etc/pgpool.conf -F $dir/etc/pcp.conf -a $dir/etc/pool_hba.conf 2>&1 | cat > $dir/log/pgpool.log &' >> $STARTALL
 else
     echo '$PGPOOL_INSTALL_DIR/bin/pgpool -D -n -f $dir/etc/pgpool.conf -F $dir/etc/pcp.conf -a $dir/etc/pool_hba.conf 2>&1 | cat > $dir/log/pgpool.log &' >> $STARTALL
@@ -911,7 +912,7 @@ if [ $MODE = 's' ];then
 # temporarily start data0 cluster to create extensions
 	echo "temporarily start data0 cluster to create extensions"
 	$PG_CTL -w -D data0 start >&5 2>&1
-	$PSQL -p $BASEPORT template1 >&5 2>&1 <<EOF
+	$PSQL  -h 127.0.0.1 -p $BASEPORT template1 >&5 2>&1 <<EOF
 CREATE EXTENSION pgpool_regclass;
 CREATE EXTENSION pgpool_recovery;
 CREATE DATABASE test;
@@ -920,7 +921,7 @@ EOF
 	    n=0
 	    while [ $n -lt $NUMCLUSTERS ]
 	    do
-		$PSQL -p $BASEPORT template1 -c "SELECT * FROM pg_create_physical_replication_slot('pgpool_setup_slot$n')" >&5 2>&1
+		$PSQL -h 127.0.0.1 -p $BASEPORT template1 -c "SELECT * FROM pg_create_physical_replication_slot('pgpool_setup_slot$n')" >&5 2>&1
 		n=`expr $n + 1`
 	    done
 	fi
@@ -929,14 +930,18 @@ EOF
 	PORT=$BASEPORT
 	CLUSTER="data"`expr $n`
 	CLUSTERDIR=$BASEDIR/$CLUSTER
-	echo "backend_hostname$n = '$PGSOCKET_DIR'" >> $CONF
+	echo "backend_hostname$n = 'localhost'" >> $CONF
 	echo "backend_port$n = $PORT" >> $CONF
 	echo "backend_weight$n = 1" >> $CONF
 	echo "backend_data_directory$n = '$CLUSTERDIR'" >> $CONF
 
 # temporarily start pgpool
 	echo "temporarily start pgpool-II to create standby nodes"
-	$PGPOOL_INSTALL_DIR/bin/pgpool -D -n -f $BASEDIR/etc/pgpool.conf -F $BASEDIR/etc/pcp.conf -a $BASEDIR/etc/pool_hba.conf > $BASEDIR/log/pgpool.log 2>&1 &
+	if [ "$PGPOOLDEBUG" = "true" ];then	
+		$PGPOOL_INSTALL_DIR/bin/pgpool -d -D -n -f $BASEDIR/etc/pgpool.conf -F $BASEDIR/etc/pcp.conf -a $BASEDIR/etc/pool_hba.conf > $BASEDIR/log/pgpool.log 2>&1 &
+	else
+		$PGPOOL_INSTALL_DIR/bin/pgpool -D -n -f $BASEDIR/etc/pgpool.conf -F $BASEDIR/etc/pcp.conf -a $BASEDIR/etc/pool_hba.conf > $BASEDIR/log/pgpool.log 2>&1 &
+	fi
 
 	wait_for_pgpool_startup
 
@@ -946,7 +951,7 @@ EOF
 		do
 		# set up pgpool.conf
 			PORT=`expr $PORT + 1`
-			echo "backend_hostname$n = '$PGSOCKET_DIR'" >> $CONF
+			echo "backend_hostname$n = 'localhost'" >> $CONF
 			echo "backend_port$n = $PORT" >> $CONF
 			echo "backend_weight$n = 1" >> $CONF
 			CLUSTER="data"`expr $n`
@@ -958,7 +963,7 @@ EOF
 	fi
 
 	wait_for_pgpool_reload $NUMCLUSTERS
-$PSQL -p $PGPOOL_PORT -c "show pool_nodes" test
+$PSQL -h 127.0.0.1 -p $PGPOOL_PORT -c "show pool_nodes" test
 export PCPPASSFILE=$PCP_PASS_FILE
 # recovery data1 and so on
 	n=1
@@ -990,7 +995,7 @@ else
 		# temporarily start data$n cluster to create extensions
 		echo "temporarily start data${n} cluster to create extensions"
 		$PG_CTL -w -D data${n} start >&5 2>&1
-		$PSQL -p `expr $BASEPORT + $n` template1 >&5 2>&1 <<EOF
+		$PSQL -h 127.0.0.1 -p `expr $BASEPORT + $n` template1 >&5 2>&1 <<EOF
 CREATE EXTENSION pgpool_regclass;
 CREATE EXTENSION pgpool_recovery;
 CREATE DATABASE test;
@@ -999,7 +1004,7 @@ EOF
 	    fi
 
 	# set up pgpool.conf
-		echo "backend_hostname$n = '$PGSOCKET_DIR'" >> $CONF
+		echo "backend_hostname$n = 'localhost'" >> $CONF
 		echo "backend_port$n = $PORT" >> $CONF
 		echo "backend_weight$n = 1" >> $CONF
 
@@ -1025,7 +1030,7 @@ fi
 
 if [ $MODE = "r" -o $MODE = "n" ];then
 	echo "create extensions"
-	$PSQL -p $PGPOOL_PORT template1 >&5 2>&1 <<EOF
+	$PSQL -h 127.0.0.1 -p $PGPOOL_PORT template1 >&5 2>&1 <<EOF
 CREATE EXTENSION pgpool_regclass;
 CREATE EXTENSION pgpool_recovery;
 CREATE DATABASE test;
@@ -1041,7 +1046,7 @@ if [ $MODE = "s" ];then
 	echo "follow_master_command = '$FOLLOW_MASTER_SCRIPT %d %h %p %D %m %M %H %P %r %R'" >> $CONF
 fi
 
-$PSQL -p $PGPOOL_PORT test <<EOF
+$PSQL -h 127.0.0.1 -p $PGPOOL_PORT test <<EOF
 show pool_nodes;
 EOF
 
