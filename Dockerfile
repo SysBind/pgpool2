@@ -9,6 +9,8 @@ RUN set -ex \
        gcc \
        libc-dev \
        linux-headers \
+       autoconf \
+       automake \
        make
 
 
@@ -17,6 +19,7 @@ COPY . /usr/src/pgpool-II
 RUN set -ex \
     \
     && cd /usr/src/pgpool-II \
+    && autoreconf \
     && ./configure \
     && make clean \
     && make \
