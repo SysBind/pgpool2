@@ -64,11 +64,6 @@ SOFTWARE.
 #define REQUEST_TIMEOUT 1000000
 #define REQUEST_INTERVAL 1000000
 
-#ifdef _WIN32
-    #define getpid _getpid
-    #define usleep(usec) Sleep((usec) / 1000)
-#endif
-
 #pragma pack(push, 1)
 
 struct ip6_pseudo_hdr {
@@ -191,30 +186,30 @@ bool ping(char *target_host) {
               addr,
               addrstr,
               sizeof(addrstr));
+
     if (fcntl(sockfd, F_SETFL, O_NONBLOCK) == -1) {
         ereport(WARNING, (errmsg("fcntl %s", strerror(errno))));
         return false;
     }
 
-
-    for (seq = 0; seq < 3; seq++) {
+    for (seq = 0; seq < 5; seq++) {
         struct icmp icmp_request = {0};
         int send_result;
         char recv_buf[MAX_IP_HEADER_SIZE + sizeof(struct icmp)];
-        int recv_size = 0;
+        int recv_size;
         int recv_result;
         socklen_t addrlen;
         uint8_t ip_vhl;
-        uint8_t ip_header_size = 0;
+        uint8_t ip_header_size;
         struct icmp *icmp_response;
         uint64_t start_time;
         uint64_t delay;
         uint16_t checksum;
-        uint16_t expected_checksum = 0;
+        uint16_t expected_checksum;
 
-        if (seq > 0) {
-            usleep(REQUEST_INTERVAL);
-        }
+        // if (seq > 0) {
+        //     usleep(REQUEST_INTERVAL);
+        // }
 
         icmp_request.icmp_type =
             addrinfo.ai_family == AF_INET6 ? ICMP6_ECHO : ICMP_ECHO;
@@ -280,66 +275,66 @@ bool ping(char *target_host) {
 
         start_time = get_time();
 
+        for (int j = 1; j < 2; j++) {
+            delay = get_time() - start_time;
 
-        delay = get_time() - start_time;
-
-        addrlen = addrinfo.ai_addrlen;
-        recv_result = recvfrom(sockfd,
-                                recv_buf,
-                                recv_size,
-                                0,
-                                addrinfo.ai_addr,
-                                &addrlen);
-        if (recv_result == 0) {
-            ereport(DEBUG1,  (errmsg("ping: connection closed")));
-            break;
-        }
-
-        if (recv_result < 0) {
-            if (errno == EAGAIN) {
-                if (delay > REQUEST_TIMEOUT) {
-                    ereport(WARNING, (errmsg("ping: Request timed out")));
-                    break;
-                } else {
-                    /* No data available yet, try to receive again. */
-                    continue;
-                }
-            } else {
-                ereport(WARNING, (errmsg("recvfrom: %s", strerror(errno))));
+            addrlen = addrinfo.ai_addrlen;
+            recv_result = recvfrom(sockfd,
+                                   recv_buf,
+                                   recv_size,
+                                   0,
+                                   addrinfo.ai_addr,
+                                   &addrlen);
+            if (recv_result == 0) {
+                ereport(DEBUG1,  (errmsg("ping: connection closed")));
                 break;
             }
-        }
+            if (recv_result < 0) {
+                if (errno == EAGAIN) {
+                    if (delay > REQUEST_TIMEOUT) {
+                        ereport(WARNING, (errmsg("ping: Request timed out")));
+                        break;
+                    } else {
+                        /* No data available yet, try to receive again. */
+                        continue;
+                    }
+                } else {
+                    ereport(WARNING, (errmsg("recvfrom: %s", strerror(errno))));
+                    break;
+                }
+            }
 
-        switch (addrinfo.ai_family) {
-            case AF_INET:
-                /* In contrast to IPv6, for IPv4 connections we do receive
-                    * IP headers in incoming datagrams.
-                    *
-                    * VHL = version (4 bits) + header length (lower 4 bits).
-                    */
-                ip_vhl = *(uint8_t *)recv_buf;
-                ip_header_size = (ip_vhl & 0x0F) * 4;
+            switch (addrinfo.ai_family) {
+                case AF_INET:
+                    /* In contrast to IPv6, for IPv4 connections we do receive
+                     * IP headers in incoming datagrams.
+                     *
+                     * VHL = version (4 bits) + header length (lower 4 bits).
+                     */
+                    ip_vhl = *(uint8_t *)recv_buf;
+                    ip_header_size = (ip_vhl & 0x0F) * 4;
+                    break;
+                case AF_INET6:
+                    ip_header_size = 0;
+                    break;
+            }
+
+            icmp_response = (struct icmp *)(recv_buf + ip_header_size);
+            icmp_response->icmp_cksum = ntohs(icmp_response->icmp_cksum);
+            icmp_response->icmp_id = ntohs(icmp_response->icmp_id);
+            icmp_response->icmp_seq = ntohs(icmp_response->icmp_seq);
+
+            if (icmp_response->icmp_id == id
+                && ((addrinfo.ai_family == AF_INET
+                        && icmp_response->icmp_type == ICMP_ECHO_REPLY)
+                    ||
+                    (addrinfo.ai_family == AF_INET6
+                        && (icmp_response->icmp_type != ICMP6_ECHO
+                            || icmp_response->icmp_type != ICMP6_ECHO_REPLY))
+                )
+            ) {
                 break;
-            case AF_INET6:
-                ip_header_size = 0;
-                break;
-        }
-
-        icmp_response = (struct icmp *)(recv_buf + ip_header_size);
-        icmp_response->icmp_cksum = ntohs(icmp_response->icmp_cksum);
-        icmp_response->icmp_id = ntohs(icmp_response->icmp_id);
-        icmp_response->icmp_seq = ntohs(icmp_response->icmp_seq);
-
-        if (icmp_response->icmp_id == id
-            && ((addrinfo.ai_family == AF_INET
-                    && icmp_response->icmp_type == ICMP_ECHO_REPLY)
-                ||
-                (addrinfo.ai_family == AF_INET6
-                    && (icmp_response->icmp_type != ICMP6_ECHO
-                        || icmp_response->icmp_type != ICMP6_ECHO_REPLY))
-            )
-        ) {
-            break;
+            }
         }
 
         if (recv_result <= 0) {
@@ -353,7 +348,7 @@ bool ping(char *target_host) {
             case AF_INET:
                 expected_checksum =
                     compute_checksum((const char *)icmp_response,
-                                        sizeof(*icmp_response));
+                                     sizeof(*icmp_response));
                 break;
             case AF_INET6: {
                 struct {
@@ -374,17 +369,16 @@ bool ping(char *target_host) {
             }
         }
 
-        if (checksum != expected_checksum) {
-            ereport(DEBUG1, (errmsg("incorrect checksum: %x != %x",
-                    checksum,
-                    expected_checksum)));
-        }
-
         ereport(DEBUG1, (errmsg("Received ICMP echo reply from %s: seq=%d, time=%.3f ms",
                 addrstr,
                 icmp_response->icmp_seq,
                 delay / 1000.0)));
 
+        if (checksum != expected_checksum) {
+            ereport(DEBUG1, (errmsg("incorrect checksum: %x != %x",
+                    checksum,
+                    expected_checksum)));
+        } 
         return true;
     }
     return false;
