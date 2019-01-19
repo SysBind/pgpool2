@@ -5,8 +5,9 @@ MAINTAINER Asaf Ohayon <asaf@sysbind.co.il>
 
 RUN set -ex \
 	\
-    && apk add --no-cache --virtual .build-deps \
+    && apk add --update --no-cache --virtual .build-deps \
        gcc \
+       file \
        libc-dev \
        linux-headers \
        autoconf \
