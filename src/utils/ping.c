@@ -207,9 +207,9 @@ bool ping(char *target_host) {
         uint16_t checksum;
         uint16_t expected_checksum;
 
-        // if (seq > 0) {
-        //     usleep(REQUEST_INTERVAL);
-        // }
+        if (seq > 0) {
+             usleep(REQUEST_INTERVAL);
+        }
 
         icmp_request.icmp_type =
             addrinfo.ai_family == AF_INET6 ? ICMP6_ECHO : ICMP_ECHO;

@@ -223,6 +223,10 @@ do_health_check_child(int *node_id)
 							*node_id, bkinfo->backend_hostname)));
 					sleep(30);
 					start_recovery(*node_id);
+				} else {
+					ereport(LOG,
+						(errmsg("ping failed to node %d(%s)",
+							*node_id, bkinfo->backend_hostname)));
 				}
 			}
 
