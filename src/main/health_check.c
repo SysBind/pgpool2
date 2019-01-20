@@ -219,9 +219,9 @@ do_health_check_child(int *node_id)
 
 				if (backend_pong) {
 					ereport(LOG,
-						(errmsg("failed node %d is back: %s, starting recovery in 30 seconds",
+						(errmsg("failed node %d is back: %s, triggering recovery",
 							*node_id, bkinfo->backend_hostname)));
-					sleep(30);
+					sleep(3);
 					start_recovery(*node_id);
 				} else {
 					ereport(LOG,
