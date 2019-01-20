@@ -12,7 +12,7 @@ if [ "$1" = 'pgpool' ]; then
     PGPOOL_PORT=${PGPOOL_PORT:-9999}
     echo "port = ${PGPOOL_PORT}" >> /etc/pgpool.conf
     
-    if [ ! -z ${PGPOOL_WD_HOST_COUNT+x} ]; then
+    if [ [ ! -z ${PGPOOL_WD_HOST_COUNT+x}] && [ ! ${PGPOOL_WD_HOST_COUNT} = "0" ] ]; then
 	PGPOOL_WD_PORT=${PGPOOL_WD_PORT:-9000}
 	PGPOOL_DOMAIN_SUFFIX=${PGPOOL_DOMAIN_SUFFIX:-""}
 	
